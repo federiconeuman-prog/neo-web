@@ -1,0 +1,968 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Kanban NEO</title>
+    <style>
+        :root {
+            --bg: #f1f3f8;
+            --col-bg: #ffffff;
+            --col-border: #e4e9f2;
+            --text: #2d3748;
+            --text-muted: #718096;
+            --accent: #6366f1;
+            --accent-hover: #4f46e5;
+            --danger: #ef4444;
+            --s-pending: #94a3b8;
+            --s-progress: #f59e0b;
+            --s-done: #22c55e;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background: var(--bg);
+            min-height: 100vh;
+            padding: 24px;
+        }
+
+        /* ── Toolbar ── */
+        .toolbar {
+            display: flex;
+            justify-content: flex-end;
+            gap: 8px;
+            margin-bottom: 20px;
+        }
+
+        .btn {
+            cursor: pointer;
+            border: none;
+            border-radius: 8px;
+            padding: 8px 16px;
+            font-size: 13px;
+            font-weight: 600;
+            transition: all 0.15s;
+            line-height: 1;
+        }
+        .btn-primary { background: var(--accent); color: white; }
+        .btn-primary:hover { background: var(--accent-hover); }
+        .btn-ghost { background: white; color: var(--text); border: 1px solid var(--col-border); }
+        .btn-ghost:hover { background: var(--bg); }
+        .btn-danger { background: #fee2e2; color: var(--danger); }
+        .btn-danger:hover { background: #fecaca; }
+
+        /* ── Board ── */
+        .board {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+            gap: 14px;
+            align-items: start;
+        }
+
+        /* ── Column ── */
+        .column {
+            background: var(--col-bg);
+            border-radius: 14px;
+            padding: 14px;
+            border: 1.5px solid var(--col-border);
+            box-shadow: 0 1px 6px rgba(0,0,0,0.05);
+            transition: border-color 0.15s, background 0.15s;
+        }
+        .column.drag-over { border-color: var(--accent); background: #f5f3ff; }
+
+        /* Current month: colored top border */
+        .column.current-month {
+            border-top: 3px solid var(--accent);
+        }
+
+        /* Empty column: more compact */
+        .column.is-empty {
+            padding-bottom: 10px;
+        }
+
+        .col-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+        .col-title-row { display: flex; align-items: center; gap: 0; }
+        .col-title {
+            font-size: 11px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.07em;
+            color: var(--text-muted);
+        }
+        .column.current-month .col-title { color: var(--accent); }
+
+        .col-count {
+            font-size: 11px;
+            font-weight: 600;
+            color: var(--text-muted);
+            background: var(--bg);
+            border-radius: 999px;
+            padding: 1px 7px;
+            margin-left: 6px;
+            white-space: nowrap;
+        }
+
+        /* Mini progress bar */
+        .col-progress {
+            height: 3px;
+            background: var(--col-border);
+            border-radius: 999px;
+            margin-bottom: 10px;
+            overflow: hidden;
+        }
+        .col-progress-fill {
+            height: 100%;
+            background: var(--s-done);
+            border-radius: 999px;
+            transition: width 0.3s ease;
+        }
+
+        .btn-del-col {
+            background: none;
+            border: none;
+            cursor: pointer;
+            color: var(--text-muted);
+            font-size: 16px;
+            width: 22px;
+            height: 22px;
+            border-radius: 6px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.15s;
+            flex-shrink: 0;
+        }
+        .btn-del-col:hover { background: #fee2e2; color: var(--danger); }
+
+        /* ── Task list with internal scroll ── */
+        .task-list {
+            min-height: 24px;
+            max-height: 480px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 7px;
+            padding-right: 2px;
+            scrollbar-width: thin;
+            scrollbar-color: var(--col-border) transparent;
+        }
+        .task-list::-webkit-scrollbar { width: 4px; }
+        .task-list::-webkit-scrollbar-track { background: transparent; }
+        .task-list::-webkit-scrollbar-thumb { background: var(--col-border); border-radius: 4px; }
+
+        /* ── Pill ── */
+        .pill {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+            border-radius: 10px;
+            padding: 7px 8px 7px 10px;
+            font-size: 12.5px;
+            font-weight: 500;
+            cursor: grab;
+            transition: box-shadow 0.15s, transform 0.1s, opacity 0.15s;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+            user-select: none;
+            width: 100%;
+        }
+        .pill:hover { box-shadow: 0 3px 8px rgba(0,0,0,0.14); transform: translateY(-1px); }
+        .pill.is-dragging { opacity: 0.35; cursor: grabbing; }
+        .pill.is-done { opacity: 0.55; }
+
+        .pill-top {
+            display: flex;
+            align-items: flex-start;
+            gap: 6px;
+        }
+
+        /* Status dot — clickable */
+        .status-dot {
+            width: 11px;
+            height: 11px;
+            border-radius: 50%;
+            flex-shrink: 0;
+            margin-top: 2px;
+            cursor: pointer;
+            transition: transform 0.1s, box-shadow 0.1s;
+            border: 2px solid rgba(0,0,0,0.15);
+        }
+        .status-dot:hover { transform: scale(1.25); box-shadow: 0 0 0 3px rgba(0,0,0,0.08); }
+        .status-dot[data-status="pending"]  { background: var(--s-pending); }
+        .status-dot[data-status="progress"] { background: var(--s-progress); }
+        .status-dot[data-status="done"]     { background: var(--s-done); }
+
+        .pill-text {
+            flex: 1;
+            word-break: break-word;
+            cursor: pointer;
+            line-height: 1.4;
+        }
+        .pill-text:hover { text-decoration: underline; text-underline-offset: 2px; }
+        .pill.is-done .pill-text { text-decoration: line-through; }
+
+        .pill-del {
+            background: none;
+            border: none;
+            cursor: pointer;
+            opacity: 0.3;
+            font-size: 15px;
+            line-height: 1;
+            padding: 1px 3px;
+            border-radius: 50%;
+            color: inherit;
+            transition: opacity 0.15s, background 0.15s;
+            flex-shrink: 0;
+            margin-top: 1px;
+        }
+        .pill-del:hover { opacity: 1; background: rgba(0,0,0,0.1); }
+
+        .pill-meta {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            flex-wrap: wrap;
+            padding-left: 17px; /* align with text, after dot */
+        }
+
+        .pill-badge {
+            font-size: 10.5px;
+            font-weight: 600;
+            border-radius: 999px;
+            padding: 1px 7px;
+            line-height: 1.5;
+        }
+        .badge-date         { background: rgba(0,0,0,0.07); }
+        .badge-date.overdue { background: #fee2e2; color: #991b1b; }
+        .badge-date.due-soon{ background: #fef3c7; color: #92400e; }
+        .badge-alta  { background: #fee2e2; color: #991b1b; }
+        .badge-media { background: #fef3c7; color: #92400e; }
+        .badge-baja  { background: #d1fae5; color: #065f46; }
+
+        .pill-desc-preview {
+            font-size: 11px;
+            opacity: 0.6;
+            font-weight: 400;
+            line-height: 1.3;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            padding-left: 17px;
+        }
+
+        /* ── Add row ── */
+        .add-row { display: flex; align-items: center; gap: 6px; margin-top: 10px; }
+        .add-input {
+            flex: 1;
+            border: 1.5px solid var(--col-border);
+            border-radius: 999px;
+            padding: 5px 12px;
+            font-size: 12.5px;
+            outline: none;
+            background: var(--bg);
+            color: var(--text);
+            transition: border-color 0.15s, background 0.15s;
+            min-width: 0;
+        }
+        .add-input:focus { border-color: var(--accent); background: white; }
+        .add-input::placeholder { color: var(--text-muted); }
+        .btn-add-pill {
+            background: none;
+            border: 1.5px solid var(--col-border);
+            cursor: pointer;
+            color: var(--text-muted);
+            font-size: 18px;
+            line-height: 1;
+            width: 28px;
+            height: 28px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+            transition: all 0.15s;
+        }
+        .btn-add-pill:hover { background: var(--accent); border-color: var(--accent); color: white; }
+
+        /* ── Modal ── */
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(15, 15, 30, 0.45);
+            backdrop-filter: blur(3px);
+            z-index: 100;
+            align-items: center;
+            justify-content: center;
+            padding: 24px;
+        }
+        .modal-overlay.open { display: flex; }
+
+        .modal {
+            background: white;
+            border-radius: 16px;
+            width: 100%;
+            max-width: 480px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.18);
+            display: flex;
+            flex-direction: column;
+            animation: modal-in 0.18s ease;
+        }
+        @keyframes modal-in {
+            from { opacity: 0; transform: scale(0.96) translateY(6px); }
+            to   { opacity: 1; transform: scale(1) translateY(0); }
+        }
+
+        .modal-header {
+            display: flex;
+            align-items: flex-start;
+            gap: 10px;
+            padding: 20px 20px 0;
+        }
+        .modal-color-dot {
+            width: 14px;
+            height: 14px;
+            border-radius: 50%;
+            flex-shrink: 0;
+            margin-top: 6px;
+        }
+        .modal-title-input {
+            flex: 1;
+            border: none;
+            outline: none;
+            font-size: 17px;
+            font-weight: 700;
+            color: var(--text);
+            background: transparent;
+            line-height: 1.4;
+        }
+        .modal-title-input::placeholder { color: #cbd5e1; }
+        .modal-close {
+            background: none;
+            border: none;
+            cursor: pointer;
+            color: var(--text-muted);
+            font-size: 20px;
+            line-height: 1;
+            padding: 2px 6px;
+            border-radius: 6px;
+            margin-top: 2px;
+            flex-shrink: 0;
+            transition: all 0.15s;
+        }
+        .modal-close:hover { background: var(--bg); }
+
+        .modal-divider { height: 1px; background: var(--col-border); margin: 16px 20px 0; }
+        .modal-body { padding: 16px 20px; display: flex; flex-direction: column; gap: 14px; }
+
+        .field-label {
+            font-size: 11px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.07em;
+            color: var(--text-muted);
+            display: block;
+            margin-bottom: 5px;
+        }
+
+        /* Status toggle buttons */
+        .status-group {
+            display: flex;
+            gap: 6px;
+        }
+        .status-btn {
+            flex: 1;
+            border: 1.5px solid var(--col-border);
+            border-radius: 8px;
+            padding: 7px 4px;
+            font-size: 12px;
+            font-weight: 600;
+            cursor: pointer;
+            background: var(--bg);
+            color: var(--text-muted);
+            transition: all 0.15s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 5px;
+        }
+        .status-btn .dot {
+            width: 8px; height: 8px;
+            border-radius: 50%;
+            flex-shrink: 0;
+        }
+        .status-btn.active[data-status="pending"]  { border-color: var(--s-pending);  background: #f1f5f9; color: #475569; }
+        .status-btn.active[data-status="progress"] { border-color: var(--s-progress); background: #fffbeb; color: #92400e; }
+        .status-btn.active[data-status="done"]     { border-color: var(--s-done);     background: #f0fdf4; color: #166534; }
+
+        .modal-textarea {
+            width: 100%;
+            border: 1.5px solid var(--col-border);
+            border-radius: 10px;
+            padding: 9px 12px;
+            font-size: 13px;
+            color: var(--text);
+            background: var(--bg);
+            resize: vertical;
+            min-height: 80px;
+            outline: none;
+            font-family: inherit;
+            line-height: 1.5;
+            transition: border-color 0.15s;
+        }
+        .modal-textarea:focus { border-color: var(--accent); background: white; }
+        .modal-textarea::placeholder { color: #cbd5e1; }
+
+        .field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+
+        .modal-input {
+            width: 100%;
+            border: 1.5px solid var(--col-border);
+            border-radius: 10px;
+            padding: 8px 12px;
+            font-size: 13px;
+            color: var(--text);
+            background: var(--bg);
+            outline: none;
+            font-family: inherit;
+            transition: border-color 0.15s;
+            appearance: none;
+        }
+        .modal-input:focus { border-color: var(--accent); background: white; }
+
+        .color-swatches { display: flex; gap: 7px; flex-wrap: wrap; }
+        .color-swatch {
+            width: 22px;
+            height: 22px;
+            border-radius: 50%;
+            cursor: pointer;
+            border: 2.5px solid transparent;
+            transition: transform 0.1s, border-color 0.1s;
+        }
+        .color-swatch:hover { transform: scale(1.15); }
+        .color-swatch.selected { border-color: var(--text); }
+
+        .modal-footer {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 14px 20px 20px;
+            border-top: 1px solid var(--col-border);
+        }
+        .modal-footer-right { display: flex; gap: 8px; }
+    </style>
+</head>
+<body>
+
+<div class="toolbar">
+    <button class="btn btn-ghost" onclick="importData()">↑ Importar</button>
+    <button class="btn btn-ghost" onclick="exportData()">↓ Exportar</button>
+    <button class="btn btn-primary" onclick="addColumn()">+ Agregar mes</button>
+</div>
+
+<div class="board" id="board"></div>
+
+<!-- Modal -->
+<div class="modal-overlay" id="modal-overlay">
+    <div class="modal" id="modal" role="dialog" aria-modal="true">
+        <div class="modal-header">
+            <div class="modal-color-dot" id="modal-color-dot"></div>
+            <input class="modal-title-input" id="modal-title" type="text" placeholder="Título de la tarea">
+            <button class="modal-close" onclick="closeModal()" title="Cerrar (Esc)">×</button>
+        </div>
+        <div class="modal-divider"></div>
+        <div class="modal-body">
+            <div>
+                <label class="field-label">Estado</label>
+                <div class="status-group" id="modal-status-group">
+                    <button class="status-btn" data-status="pending"  onclick="selectStatus('pending')">
+                        <span class="dot" style="background:var(--s-pending)"></span> Pendiente
+                    </button>
+                    <button class="status-btn" data-status="progress" onclick="selectStatus('progress')">
+                        <span class="dot" style="background:var(--s-progress)"></span> En progreso
+                    </button>
+                    <button class="status-btn" data-status="done"     onclick="selectStatus('done')">
+                        <span class="dot" style="background:var(--s-done)"></span> Hecho
+                    </button>
+                </div>
+            </div>
+            <div>
+                <label class="field-label" for="modal-desc">Descripción</label>
+                <textarea class="modal-textarea" id="modal-desc" placeholder="Notas, contexto, links..."></textarea>
+            </div>
+            <div class="field-row">
+                <div>
+                    <label class="field-label" for="modal-date">Fecha límite</label>
+                    <input class="modal-input" type="date" id="modal-date">
+                </div>
+                <div>
+                    <label class="field-label" for="modal-priority">Prioridad</label>
+                    <select class="modal-input" id="modal-priority">
+                        <option value="">Sin prioridad</option>
+                        <option value="alta">Alta</option>
+                        <option value="media">Media</option>
+                        <option value="baja">Baja</option>
+                    </select>
+                </div>
+            </div>
+            <div>
+                <label class="field-label">Color</label>
+                <div class="color-swatches" id="modal-swatches"></div>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-danger" id="modal-delete-btn">Eliminar tarea</button>
+            <div class="modal-footer-right">
+                <button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
+                <button class="btn btn-primary" onclick="saveModal()">Guardar</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<input type="file" id="fileInput" accept=".json" style="display:none" onchange="handleFileImport(event)">
+
+<script>
+    const COLORS = [
+        { bg: '#ede9fe', fg: '#5b21b6' },
+        { bg: '#dbeafe', fg: '#1e40af' },
+        { bg: '#dcfce7', fg: '#166534' },
+        { bg: '#fef9c3', fg: '#854d0e' },
+        { bg: '#ffe4e6', fg: '#9f1239' },
+        { bg: '#e0f2fe', fg: '#0c4a6e' },
+        { bg: '#fce7f3', fg: '#9d174d' },
+        { bg: '#ecfdf5', fg: '#065f46' },
+        { bg: '#fff7ed', fg: '#9a3412' },
+        { bg: '#f3e8ff', fg: '#6b21a8' },
+    ];
+
+    const STATUS_CYCLE = ['pending', 'progress', 'done'];
+    const PRIORITY_LABELS = { alta: 'Alta', media: 'Media', baja: 'Baja' };
+
+    const MONTH_NAMES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio',
+                         'Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+
+    const DEFAULT_MONTHS = [
+        'Junio 2026','Julio 2026','Agosto 2026','Septiembre 2026',
+        'Octubre 2026','Noviembre 2026','Diciembre 2026','Enero 2027','Febrero 2027'
+    ];
+
+    let boardData = [];
+    let dragSrc = null;
+    let modalState = null;
+
+    // ── Helpers ───────────────────────────────────────────────────────────────
+
+    function currentMonthTitle() {
+        const now = new Date();
+        return `${MONTH_NAMES[now.getMonth()]} ${now.getFullYear()}`;
+    }
+
+    function isCurrentMonth(title) {
+        return title === currentMonthTitle();
+    }
+
+    // ── Init ──────────────────────────────────────────────────────────────────
+
+    function init() {
+        const saved = localStorage.getItem('kanbanData_v2');
+        if (saved) {
+            try { boardData = JSON.parse(saved); } catch { boardData = makeDefaults(); }
+        } else {
+            boardData = makeDefaults();
+        }
+        save();
+        render();
+        buildSwatches();
+        setupModalEvents();
+    }
+
+    function makeDefaults() {
+        return DEFAULT_MONTHS.map((title, i) => ({ id: `col-${i + 1}`, title, tasks: [] }));
+    }
+
+    function save() {
+        localStorage.setItem('kanbanData_v2', JSON.stringify(boardData));
+    }
+
+    // ── Render ────────────────────────────────────────────────────────────────
+
+    function render() {
+        const board = document.getElementById('board');
+        board.innerHTML = '';
+        boardData.forEach(col => board.appendChild(buildColumn(col)));
+    }
+
+    function buildColumn(col) {
+        const total = col.tasks.length;
+        const done  = col.tasks.filter(t => t.status === 'done').length;
+        const isEmpty = total === 0;
+        const isCurrent = isCurrentMonth(col.title);
+
+        const div = document.createElement('div');
+        div.className = 'column' + (isCurrent ? ' current-month' : '') + (isEmpty ? ' is-empty' : '');
+        div.dataset.colId = col.id;
+
+        div.addEventListener('dragover', e => { e.preventDefault(); div.classList.add('drag-over'); });
+        div.addEventListener('dragleave', e => { if (!div.contains(e.relatedTarget)) div.classList.remove('drag-over'); });
+        div.addEventListener('drop', e => { e.preventDefault(); div.classList.remove('drag-over'); dropTask(col.id); });
+
+        // Header
+        const header = document.createElement('div');
+        header.className = 'col-header';
+        const titleRow = document.createElement('div');
+        titleRow.className = 'col-title-row';
+        const titleEl = document.createElement('span');
+        titleEl.className = 'col-title';
+        titleEl.textContent = col.title;
+        const countEl = document.createElement('span');
+        countEl.className = 'col-count';
+        countEl.textContent = total > 0 ? (done > 0 ? `${done}/${total}` : total) : '0';
+        countEl.title = total > 0 ? `${done} hecha(s) de ${total}` : 'Sin tareas';
+        titleRow.appendChild(titleEl);
+        titleRow.appendChild(countEl);
+        const delBtn = document.createElement('button');
+        delBtn.className = 'btn-del-col';
+        delBtn.title = 'Eliminar columna';
+        delBtn.textContent = '×';
+        delBtn.addEventListener('click', () => deleteColumn(col.id));
+        header.appendChild(titleRow);
+        header.appendChild(delBtn);
+        div.appendChild(header);
+
+        // Progress bar (only if has tasks)
+        if (total > 0) {
+            const bar = document.createElement('div');
+            bar.className = 'col-progress';
+            const fill = document.createElement('div');
+            fill.className = 'col-progress-fill';
+            fill.style.width = `${Math.round((done / total) * 100)}%`;
+            bar.appendChild(fill);
+            div.appendChild(bar);
+        }
+
+        // Tasks
+        const list = document.createElement('div');
+        list.className = 'task-list';
+        col.tasks.forEach(task => list.appendChild(buildPill(task, col.id)));
+        div.appendChild(list);
+
+        // Add row
+        const addRow = document.createElement('div');
+        addRow.className = 'add-row';
+        const input = document.createElement('input');
+        input.className = 'add-input';
+        input.placeholder = 'Nueva tarea...';
+        input.addEventListener('keydown', e => { if (e.key === 'Enter') commitAdd(col.id, input); });
+        const addBtn = document.createElement('button');
+        addBtn.className = 'btn-add-pill';
+        addBtn.title = 'Agregar';
+        addBtn.textContent = '+';
+        addBtn.addEventListener('click', () => commitAdd(col.id, input));
+        addRow.appendChild(input);
+        addRow.appendChild(addBtn);
+        div.appendChild(addRow);
+
+        return div;
+    }
+
+    function buildPill(task, colId) {
+        const c = COLORS[(task.ci ?? 0) % COLORS.length];
+        const status = task.status || 'pending';
+        const isDone = status === 'done';
+
+        const pill = document.createElement('div');
+        pill.className = 'pill' + (isDone ? ' is-done' : '');
+        pill.draggable = true;
+        pill.style.background = c.bg;
+        pill.style.color = c.fg;
+
+        pill.addEventListener('dragstart', () => {
+            dragSrc = { colId, taskId: task.id };
+            setTimeout(() => pill.classList.add('is-dragging'), 0);
+        });
+        pill.addEventListener('dragend', () => pill.classList.remove('is-dragging'));
+
+        // Top row
+        const top = document.createElement('div');
+        top.className = 'pill-top';
+
+        // Status dot
+        const dot = document.createElement('div');
+        dot.className = 'status-dot';
+        dot.dataset.status = status;
+        dot.title = { pending: 'Pendiente', progress: 'En progreso', done: 'Hecho' }[status];
+        dot.addEventListener('click', e => { e.stopPropagation(); cycleStatus(colId, task.id); });
+        top.appendChild(dot);
+
+        // Text
+        const textEl = document.createElement('span');
+        textEl.className = 'pill-text';
+        textEl.textContent = task.content;
+        textEl.title = 'Abrir detalle';
+        textEl.addEventListener('click', e => { e.stopPropagation(); openModal(task, colId); });
+        top.appendChild(textEl);
+
+        // Delete
+        const del = document.createElement('button');
+        del.className = 'pill-del';
+        del.textContent = '×';
+        del.title = 'Eliminar';
+        del.addEventListener('click', e => { e.stopPropagation(); deleteTask(colId, task.id); });
+        top.appendChild(del);
+        pill.appendChild(top);
+
+        // Description preview
+        if (task.description && task.description.trim()) {
+            const preview = document.createElement('div');
+            preview.className = 'pill-desc-preview';
+            preview.textContent = task.description.trim();
+            pill.appendChild(preview);
+        }
+
+        // Meta badges
+        if (task.dueDate || task.priority) {
+            const meta = document.createElement('div');
+            meta.className = 'pill-meta';
+
+            if (task.dueDate) {
+                const badge = document.createElement('span');
+                badge.className = 'pill-badge badge-date';
+                const due = new Date(task.dueDate + 'T00:00:00');
+                const today = new Date(); today.setHours(0,0,0,0);
+                const diff = (due - today) / 86400000;
+                if (diff < 0) badge.classList.add('overdue');
+                else if (diff <= 3) badge.classList.add('due-soon');
+                badge.textContent = due.toLocaleDateString('es-AR', { day: 'numeric', month: 'short' });
+                meta.appendChild(badge);
+            }
+
+            if (task.priority) {
+                const badge = document.createElement('span');
+                badge.className = `pill-badge badge-${task.priority}`;
+                badge.textContent = PRIORITY_LABELS[task.priority];
+                meta.appendChild(badge);
+            }
+
+            pill.appendChild(meta);
+        }
+
+        return pill;
+    }
+
+    // ── Status ────────────────────────────────────────────────────────────────
+
+    function cycleStatus(colId, taskId) {
+        const col = boardData.find(c => c.id === colId);
+        const task = col && col.tasks.find(t => t.id === taskId);
+        if (!task) return;
+        const idx = STATUS_CYCLE.indexOf(task.status || 'pending');
+        task.status = STATUS_CYCLE[(idx + 1) % STATUS_CYCLE.length];
+        save();
+        render();
+    }
+
+    // ── Modal ─────────────────────────────────────────────────────────────────
+
+    function buildSwatches() {
+        const container = document.getElementById('modal-swatches');
+        COLORS.forEach((c, i) => {
+            const sw = document.createElement('div');
+            sw.className = 'color-swatch';
+            sw.dataset.ci = i;
+            sw.style.background = c.fg;
+            sw.addEventListener('click', () => selectSwatch(i));
+            container.appendChild(sw);
+        });
+    }
+
+    function selectSwatch(ci) {
+        document.querySelectorAll('.color-swatch').forEach((sw, i) => sw.classList.toggle('selected', i === ci));
+        document.getElementById('modal-color-dot').style.background = COLORS[ci].fg;
+    }
+
+    function getSelectedSwatch() {
+        const sel = document.querySelector('.color-swatch.selected');
+        return sel ? parseInt(sel.dataset.ci) : 0;
+    }
+
+    function selectStatus(status) {
+        document.querySelectorAll('.status-btn').forEach(btn => {
+            btn.classList.toggle('active', btn.dataset.status === status);
+        });
+    }
+
+    function getSelectedStatus() {
+        const active = document.querySelector('.status-btn.active');
+        return active ? active.dataset.status : 'pending';
+    }
+
+    function openModal(task, colId) {
+        modalState = { colId, taskId: task.id };
+
+        document.getElementById('modal-title').value = task.content || '';
+        document.getElementById('modal-desc').value = task.description || '';
+        document.getElementById('modal-date').value = task.dueDate || '';
+        document.getElementById('modal-priority').value = task.priority || '';
+        selectSwatch(task.ci ?? 0);
+        selectStatus(task.status || 'pending');
+
+        document.getElementById('modal-delete-btn').onclick = () => {
+            deleteTask(colId, task.id);
+            closeModal();
+        };
+
+        document.getElementById('modal-overlay').classList.add('open');
+        requestAnimationFrame(() => document.getElementById('modal-title').focus());
+    }
+
+    function closeModal() {
+        document.getElementById('modal-overlay').classList.remove('open');
+        modalState = null;
+    }
+
+    function saveModal() {
+        if (!modalState) return;
+        const title = document.getElementById('modal-title').value.trim();
+        if (!title) { document.getElementById('modal-title').focus(); return; }
+
+        const { colId, taskId } = modalState;
+        const col = boardData.find(c => c.id === colId);
+        const task = col && col.tasks.find(t => t.id === taskId);
+        if (!task) return;
+
+        task.content     = title;
+        task.description = document.getElementById('modal-desc').value.trim();
+        task.dueDate     = document.getElementById('modal-date').value;
+        task.priority    = document.getElementById('modal-priority').value;
+        task.ci          = getSelectedSwatch();
+        task.status      = getSelectedStatus();
+
+        save();
+        closeModal();
+        render();
+    }
+
+    function setupModalEvents() {
+        document.getElementById('modal-overlay').addEventListener('click', e => {
+            if (e.target === document.getElementById('modal-overlay')) closeModal();
+        });
+        document.addEventListener('keydown', e => {
+            if (!modalState) return;
+            if (e.key === 'Escape') closeModal();
+            if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) saveModal();
+        });
+    }
+
+    // ── CRUD ──────────────────────────────────────────────────────────────────
+
+    function commitAdd(colId, input) {
+        const val = input.value.trim();
+        if (!val) return;
+        const col = boardData.find(c => c.id === colId);
+        if (!col) return;
+        col.tasks.push({
+            id: `t-${Date.now()}`,
+            content: val,
+            description: '',
+            dueDate: '',
+            priority: '',
+            status: 'pending',
+            ci: col.tasks.length % COLORS.length
+        });
+        save();
+        render();
+        requestAnimationFrame(() => {
+            const inp = document.querySelector(`.column[data-col-id="${colId}"] .add-input`);
+            if (inp) inp.focus();
+        });
+    }
+
+    function deleteTask(colId, taskId) {
+        const col = boardData.find(c => c.id === colId);
+        if (!col) return;
+        col.tasks = col.tasks.filter(t => t.id !== taskId);
+        save();
+        render();
+    }
+
+    function addColumn() {
+        const title = prompt('Nombre del mes o columna (ej: Marzo 2027):');
+        if (title && title.trim()) {
+            boardData.push({ id: `col-${Date.now()}`, title: title.trim(), tasks: [] });
+            save();
+            render();
+            requestAnimationFrame(() => {
+                document.getElementById('board').lastElementChild?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            });
+        }
+    }
+
+    function deleteColumn(colId) {
+        const col = boardData.find(c => c.id === colId);
+        if (!col) return;
+        const msg = col.tasks.length > 0
+            ? `¿Eliminar "${col.title}" y sus ${col.tasks.length} tarea(s)?`
+            : `¿Eliminar la columna "${col.title}"?`;
+        if (!confirm(msg)) return;
+        boardData = boardData.filter(c => c.id !== colId);
+        save();
+        render();
+    }
+
+    // ── Drag & drop ───────────────────────────────────────────────────────────
+
+    function dropTask(targetColId) {
+        if (!dragSrc || dragSrc.colId === targetColId) { dragSrc = null; return; }
+        const srcCol = boardData.find(c => c.id === dragSrc.colId);
+        const tgtCol = boardData.find(c => c.id === targetColId);
+        if (!srcCol || !tgtCol) { dragSrc = null; return; }
+        const idx = srcCol.tasks.findIndex(t => t.id === dragSrc.taskId);
+        if (idx === -1) { dragSrc = null; return; }
+        const [task] = srcCol.tasks.splice(idx, 1);
+        tgtCol.tasks.push(task);
+        dragSrc = null;
+        save();
+        render();
+    }
+
+    // ── Export / Import ───────────────────────────────────────────────────────
+
+    function exportData() {
+        const date = new Date().toISOString().slice(0, 10);
+        const blob = new Blob([JSON.stringify(boardData, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `kanban-${date}.json`;
+        a.click();
+        URL.revokeObjectURL(url);
+    }
+
+    function importData() { document.getElementById('fileInput').click(); }
+
+    function handleFileImport(e) {
+        const file = e.target.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = ev => {
+            try {
+                const data = JSON.parse(ev.target.result);
+                if (Array.isArray(data)) { boardData = data; save(); render(); }
+                else alert('Archivo inválido: debe ser un JSON de tablero exportado.');
+            } catch { alert('No se pudo leer el archivo.'); }
+        };
+        reader.readAsText(file);
+        e.target.value = '';
+    }
+
+    init();
+</script>
+</body>
+</html>

@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "PowerShell(Get-ChildItem -Path \"c:\\\\Users\\\\FEDERICO.NEUMAN\\\\Downloads\\\\neo-web\" -Recurse -Exclude \".git\" | Where-Object { !$_.PSIsContainer } | Select-Object FullName)"
+    ]
+  }
+}
