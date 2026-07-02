@@ -1,0 +1,16 @@
+---
+No implementaste las transiciones, ni las animaciones, ni la interactividad.
+---
+El Genially debía estar incorporado al texto, tipo embebido, no como un campo aparte. Es decir, el editor debe aceptar embebidos dentro del contenido.
+---
+Validación antes de publicar. Ahora que "Publicar" ya pide confirmación, tiene sentido agregar una validación previa: si falta imagen de portada, o el contenido está vacío, mostrar un aviso en el modal de confirmación ("Esta edición no tiene imagen de portada — ¿publicar igual?") en vez de dejar publicar cualquier cosa a medio cargar. Evita que se publique contenido roto por error.
+---
+Duplicar edición. Distinto de "Importar" (que trae contenido del sistema viejo): un botón "Duplicar" en el listado de Vista 3 que clona una edición ya cargada en el sistema nuevo como punto de partida para una similar — útil para ediciones que siguen el mismo formato mes a mes (por ejemplo, si todos los meses hay una sección "Docente 3.0" con estructura parecida).
+---
+Historial de versiones simplificado
+---
+
+Explorar qué agregar al dashboard
+---
+Mobile
+---
